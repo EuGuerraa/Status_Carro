@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Status do Carro</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0f172a" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Carro" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+    color: #f1f5f9;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+
+  .card {
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+
+  .status-icon {
+    font-size: 88px;
+    line-height: 1;
+    margin-bottom: 8px;
+    transition: transform 0.2s ease;
+  }
+
+  .status-label {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 8px 0 4px;
+  }
+
+  .status-time {
+    font-size: 14px;
+    color: #94a3b8;
+    margin-bottom: 32px;
+  }
+
+  .buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  button {
+    border: none;
+    border-radius: 16px;
+    padding: 18px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s ease, opacity 0.1s ease;
+  }
+
+  button:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+  }
+
+  .btn-tranquei {
+    background: #16a34a;
+    color: white;
+  }
+
+  .btn-destranquei {
+    background: #dc2626;
+    color: white;
+  }
+
+  .footer-note {
+    margin-top: 28px;
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .loading {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #334155;
+    color: #f1f5f9;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<div class="card" id="card">
+  <div class="status-icon" id="statusIcon">⏳</div>
+  <div class="status-label" id="statusLabel">Carregando...</div>
+  <div class="status-time" id="statusTime">&nbsp;</div>
+
+  <div class="buttons">
+    <button class="btn-tranquei" id="btnTranquei">🔒 Tranquei o carro</button>
+    <button class="btn-destranquei" id="btnDestranquei">🔓 Destranquei o carro</button>
+  </div>
+
+  <div class="footer-note">Toca no botão pra registrar o status</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAAwRN-3T4pj787OikS9ZwUEmuqU-7cmzo",
+    authDomain: "status-carro.firebaseapp.com",
+    databaseURL: "https://status-carro-default-rtdb.firebaseio.com",
+    projectId: "status-carro",
+    storageBucket: "status-carro.firebasestorage.app",
+    messagingSenderId: "731039880891",
+    appId: "1:731039880891:web:516e992c3a103b61797b9e"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const carroRef = db.ref("carro");
+
+  const statusIcon = document.getElementById("statusIcon");
+  const statusLabel = document.getElementById("statusLabel");
+  const statusTime = document.getElementById("statusTime");
+  const card = document.getElementById("card");
+  const toast = document.getElementById("toast");
+  const btnTranquei = document.getElementById("btnTranquei");
+  const btnDestranquei = document.getElementById("btnDestranquei");
+
+  function formatTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function render(data) {
+    if (!data) {
+      statusIcon.textContent = "❓";
+      statusLabel.textContent = "Sem registro ainda";
+      statusTime.textContent = "";
+      return;
+    }
+    const trancado = data.trancado;
+    const ts = data.timestamp;
+
+    if (trancado === true) {
+      statusIcon.textContent = "🔒";
+      statusLabel.textContent = "Carro trancado";
+      statusLabel.style.color = "#4ade80";
+    } else if (trancado === false) {
+      statusIcon.textContent = "🔓";
+      statusLabel.textContent = "Carro destrancado";
+      statusLabel.style.color = "#f87171";
+    } else {
+      statusIcon.textContent = "❓";
+      statusLabel.textContent = "Sem registro ainda";
+      statusLabel.style.color = "#f1f5f9";
+    }
+    statusTime.textContent = ts ? "Atualizado em " + formatTime(ts) : "";
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 1800);
+  }
+
+  function setStatus(trancado) {
+    card.classList.add("loading");
+    carroRef.set({
+      trancado: trancado,
+      timestamp: Date.now()
+    }).then(() => {
+      showToast(trancado ? "Salvo: trancado ✅" : "Salvo: destrancado ✅");
+    }).catch((err) => {
+      showToast("Erro ao salvar: " + err.message);
+    }).finally(() => {
+      card.classList.remove("loading");
+    });
+  }
+
+  btnTranquei.addEventListener("click", () => setStatus(true));
+  btnDestranquei.addEventListener("click", () => setStatus(false));
+
+  // Escuta em tempo real
+  carroRef.on("value", (snapshot) => {
+    render(snapshot.val());
+  });
+
+  // Registrar service worker (pra funcionar como PWA instalável)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").catch(() => {});
+    });
+  }
+</script>
+
+</body>
+</html>
